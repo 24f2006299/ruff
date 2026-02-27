@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::Cell;
 
 use itertools::{Either, EitherOrBoth, Itertools};
 use ruff_db::diagnostic::{
@@ -131,8 +132,9 @@ use crate::types::typed_dict::{
 };
 use crate::types::visitor::find_over_type;
 use crate::types::{
-    BoundTypeVarIdentity, BoundTypeVarInstance, CallDunderError, CallableBinding, CallableType,
-    CallableTypeKind, ClassType, DataclassParams, DynamicType, GenericAlias, InternedConstraintSet,
+    BindingContext, BoundTypeVarIdentity, BoundTypeVarInstance, CallDunderError, CallableBinding,
+    CallableType, CallableTypeKind, ClassType, DataclassParams, DynamicType, GenericAlias,
+    InternedConstraintSet,
     InternedType, IntersectionBuilder, IntersectionType, KnownClass, KnownInstanceType, KnownUnion,
     LintDiagnosticGuard, LiteralValueType, LiteralValueTypeKind, ManualPEP695TypeAliasType,
     MemberLookupPolicy, MetaclassCandidate, PEP695TypeAliasType, ParamSpecAttrKind, Parameter,
@@ -4640,17 +4642,19 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         };
         if let Some(default_expr) = default.as_deref() {
             let default_ty = self.infer_type_expression(default_expr);
-            let bound_node = bound_node.map(|n| match n {
-                ast::Expr::Tuple(tuple) => BoundOrConstraintsNodes::Constraints(&tuple.elts),
-                _ => BoundOrConstraintsNodes::Bound(n),
-            });
-            self.validate_typevar_default(
-                Some(&name.id),
-                bound_or_constraints,
-                default_ty,
-                default_expr,
-                bound_node,
-            );
+            if !self.check_default_for_outer_scope_typevars(default_ty, default_expr, &name.id) {
+                let bound_node = bound_node.map(|n| match n {
+                    ast::Expr::Tuple(tuple) => BoundOrConstraintsNodes::Constraints(&tuple.elts),
+                    _ => BoundOrConstraintsNodes::Bound(n),
+                });
+                self.validate_typevar_default(
+                    Some(&name.id),
+                    bound_or_constraints,
+                    default_ty,
+                    default_expr,
+                    bound_node,
+                );
+            }
         }
         self.deferred_state = previous_deferred_state;
     }
@@ -4948,6 +4952,63 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         }
     }
 
+    /// Check if a type parameter's default references type variables from an outer scope.
+    ///
+    /// Returns `true` if such a reference was found (and a diagnostic was emitted),
+    /// indicating that further default validation should be skipped.
+    fn check_default_for_outer_scope_typevars(
+        &self,
+        default_ty: Type<'db>,
+        default_node: &ast::Expr,
+        typevar_name: &str,
+    ) -> bool {
+        let db = self.db();
+
+        // Determine the expected binding context from the current type parameter scope.
+        // Type parameter defaults are evaluated in the type param scope of a class,
+        // function, or type alias. The expected binding context is that class/function/alias.
+        let expected_binding_def = match self.scope().node(db) {
+            NodeWithScopeKind::ClassTypeParameters(class) => {
+                self.index.expect_single_definition(class)
+            }
+            NodeWithScopeKind::FunctionTypeParameters(function) => {
+                self.index.expect_single_definition(function)
+            }
+            NodeWithScopeKind::TypeAliasTypeParameters(type_alias) => {
+                self.index.expect_single_definition(type_alias)
+            }
+            _ => return false,
+        };
+        let expected_binding = BindingContext::Definition(expected_binding_def);
+
+        let outer_tv: Cell<Option<BoundTypeVarInstance<'db>>> = Cell::new(None);
+        any_over_type(db, default_ty, false, |ty| {
+            if let Type::TypeVar(bound_tv) = ty {
+                if bound_tv.binding_context(db) != expected_binding {
+                    outer_tv.set(Some(bound_tv));
+                    return true;
+                }
+            }
+            false
+        });
+
+        if let Some(outer_tv) = outer_tv.get() {
+            let outer_name = outer_tv.typevar(db).name(db);
+            if let Some(builder) = self
+                .context
+                .report_lint(&INVALID_TYPE_VARIABLE_DEFAULT, default_node)
+            {
+                builder.into_diagnostic(format_args!(
+                    "Type parameter `{typevar_name}` cannot use type parameter \
+                    `{outer_name}` from an outer scope as its default"
+                ));
+            }
+            return true;
+        }
+
+        false
+    }
+
     fn infer_paramspec_definition(
         &mut self,
         node: &ast::TypeParamParamSpec,
@@ -4986,7 +5047,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         let ast::TypeParamParamSpec {
             range: _,
             node_index: _,
-            name: _,
+            name,
             default: Some(default),
         } = node
         else {
@@ -4994,11 +5055,11 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         };
         let previous_deferred_state =
             std::mem::replace(&mut self.deferred_state, DeferredExpressionState::Deferred);
-        self.infer_paramspec_default(default);
+        self.infer_paramspec_default(default, Some(&name.id));
         self.deferred_state = previous_deferred_state;
     }
 
-    fn infer_paramspec_default(&mut self, default_expr: &ast::Expr) {
+    fn infer_paramspec_default(&mut self, default_expr: &ast::Expr, paramspec_name: Option<&str>) {
         match default_expr {
             ast::Expr::EllipsisLiteral(ellipsis) => {
                 let ty = self.infer_ellipsis_literal_expression(ellipsis);
@@ -5020,6 +5081,11 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             }
             ast::Expr::Name(_) => {
                 let ty = self.infer_type_expression(default_expr);
+                if let Some(name) = paramspec_name {
+                    if self.check_default_for_outer_scope_typevars(ty, default_expr, name) {
+                        return;
+                    }
+                }
                 let is_paramspec = match ty {
                     Type::TypeVar(typevar) => typevar.is_paramspec(self.db()),
                     Type::KnownInstance(known_instance) => {
@@ -7591,7 +7657,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                 known_class,
                 Some(KnownClass::ParamSpec | KnownClass::ExtensionsParamSpec)
             ) {
-                self.infer_paramspec_default(&default.value);
+                self.infer_paramspec_default(&default.value, None);
             } else {
                 let default_ty = self.infer_type_expression(&default.value);
                 let bound_or_constraints_node = arguments

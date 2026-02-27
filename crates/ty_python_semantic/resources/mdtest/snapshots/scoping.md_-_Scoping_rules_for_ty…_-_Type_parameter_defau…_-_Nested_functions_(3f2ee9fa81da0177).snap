@@ -1,0 +1,37 @@
+---
+source: crates/ty_test/src/lib.rs
+assertion_line: 624
+expression: snapshot
+---
+
+---
+mdtest name: scoping.md - Scoping rules for type variables - Type parameter defaults cannot reference outer-scope type parameters - Nested functions
+mdtest path: crates/ty_python_semantic/resources/mdtest/generics/scoping.md
+---
+
+# Python source files
+
+## mdtest_snippet.py
+
+```
+1 | def outer[T]() -> None:
+2 |     # error: [invalid-type-variable-default]
+3 |     def inner[U = T]() -> None: ...
+4 |     def ok[U = int]() -> None: ...  # OK
+```
+
+# Diagnostics
+
+```
+error[invalid-type-variable-default]: Type parameter `U` cannot use type parameter `T` from an outer scope as its default
+ --> src/mdtest_snippet.py:3:19
+  |
+1 | def outer[T]() -> None:
+2 |     # error: [invalid-type-variable-default]
+3 |     def inner[U = T]() -> None: ...
+  |                   ^
+4 |     def ok[U = int]() -> None: ...  # OK
+  |
+info: rule `invalid-type-variable-default` is enabled by default
+
+```

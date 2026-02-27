@@ -372,6 +372,90 @@ class C[T]:
     ok2: Inner[T]
 ```
 
+## Type parameter defaults cannot reference outer-scope type parameters
+
+```toml
+[environment]
+python-version = "3.13"
+```
+
+Per [PEP 696], the default of a type parameter must not reference type parameters from an outer
+scope.
+
+### Nested classes
+
+<!-- snapshot-diagnostics -->
+
+```py
+class Outer[T]:
+    # error: [invalid-type-variable-default]
+    class Inner1[U = T]: ...
+
+    # error: [invalid-type-variable-default]
+    class Inner2[U = T | int]: ...
+    class Inner3[U = int]: ...  # OK: no outer type param in default
+    class Inner4[S, U = S]: ...  # OK: S is from the same scope
+```
+
+### Nested functions
+
+<!-- snapshot-diagnostics -->
+
+```py
+def outer[T]() -> None:
+    # error: [invalid-type-variable-default]
+    def inner[U = T]() -> None: ...
+    def ok[U = int]() -> None: ...  # OK
+```
+
+### Class nested in function
+
+<!-- snapshot-diagnostics -->
+
+```py
+def f[T]() -> None:
+    # error: [invalid-type-variable-default]
+    class C[U = T]: ...
+```
+
+### Function nested in class
+
+<!-- snapshot-diagnostics -->
+
+```py
+class C[T]:
+    # error: [invalid-type-variable-default]
+    def f[U = T](self) -> None: ...
+    def g[U = int](self) -> None: ...  # OK
+```
+
+### Type alias nested in class
+
+<!-- snapshot-diagnostics -->
+
+```py
+class C[T]:
+    # error: [invalid-type-variable-default]
+    type Alias[U = T] = list[U]
+
+    type Ok[U = int] = list[U]  # OK
+```
+
+### Deeply nested
+
+<!-- snapshot-diagnostics -->
+
+```py
+class A[T]:
+    class B[U]:
+        # error: [invalid-type-variable-default]
+        class C[V = T]: ...
+
+        # error: [invalid-type-variable-default]
+        class D[V = U]: ...
+        class E[V = int]: ...  # OK
+```
+
 ## Mixed-scope type parameters
 
 Methods can have type parameters that are scoped to the method itself, while also referring to type
@@ -395,4 +479,5 @@ def f(x: type[Foo[T]]) -> T:
     raise NotImplementedError
 ```
 
+[pep 696]: https://peps.python.org/pep-0696/
 [scoping]: https://typing.python.org/en/latest/spec/generics.html#scoping-rules-for-type-variables
