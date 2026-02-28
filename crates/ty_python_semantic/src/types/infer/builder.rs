@@ -5016,6 +5016,9 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                         .message(format_args!("`{outer_name}` defined here")),
                     );
                 }
+                diagnostic.info(
+                    "See https://typing.python.org/en/latest/spec/generics.html#scoping-rules",
+                );
             }
             return true;
         }
