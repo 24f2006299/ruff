@@ -4984,9 +4984,10 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             if let Type::TypeVar(bound_tv) = ty
                 && bound_tv.binding_context(db) != expected_binding
             {
-                return Some(bound_tv);
+                Some(bound_tv)
+            } else {
+                None
             }
-            None
         });
 
         if let Some(outer_tv) = outer_tv {
