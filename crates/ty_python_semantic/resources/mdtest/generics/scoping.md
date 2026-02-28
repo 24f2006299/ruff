@@ -5,8 +5,7 @@
 python-version = "3.12"
 ```
 
-Most of these tests come from the [Scoping rules for type variables][scoping] section of the typing
-spec.
+Most of these tests come from the [Scoping rules for type variables] section of the typing spec.
 
 ## Typevar used outside of generic function or class
 
@@ -379,9 +378,9 @@ class C[T]:
 python-version = "3.13"
 ```
 
-Per [PEP 696], the default of a type parameter must not reference type parameters from an outer
-scope. Out-of-scope defaults on class type parameters are validated as part of
-`invalid-generic-class`; the tests here cover the remaining cases for function and type alias
+Per the [typing spec][scoping rules], the default of a type parameter must not reference type
+parameters from an outer scope. Out-of-scope defaults on class type parameters are validated as part
+of `invalid-generic-class`; the tests here cover the remaining cases for function and type alias
 scopes.
 
 ### Nested functions
@@ -441,5 +440,5 @@ def f(x: type[Foo[T]]) -> T:
     raise NotImplementedError
 ```
 
-[pep 696]: https://peps.python.org/pep-0696/
-[scoping]: https://typing.python.org/en/latest/spec/generics.html#scoping-rules-for-type-variables
+[scoping rules]: https://typing.python.org/en/latest/spec/generics.html#scoping-rules
+[scoping rules for type variables]: https://typing.python.org/en/latest/spec/generics.html#scoping-rules-for-type-variables

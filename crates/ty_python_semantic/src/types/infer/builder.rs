@@ -7657,7 +7657,10 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                 known_class,
                 Some(KnownClass::ParamSpec | KnownClass::ExtensionsParamSpec)
             ) {
-                self.infer_paramspec_default(&default.value, None);
+                self.infer_paramspec_default(
+                    &default.value,
+                    target.as_name_expr().map(|n| n.id.as_str()),
+                );
             } else {
                 let default_ty = self.infer_type_expression(&default.value);
                 let bound_or_constraints_node = arguments
