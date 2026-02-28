@@ -380,22 +380,9 @@ python-version = "3.13"
 ```
 
 Per [PEP 696], the default of a type parameter must not reference type parameters from an outer
-scope.
-
-### Nested classes
-
-<!-- snapshot-diagnostics -->
-
-```py
-class Outer[T]:
-    # error: [invalid-type-variable-default]
-    class Inner1[U = T]: ...
-
-    # error: [invalid-type-variable-default]
-    class Inner2[U = T | int]: ...
-    class Inner3[U = int]: ...  # OK: no outer type param in default
-    class Inner4[S, U = S]: ...  # OK: S is from the same scope
-```
+scope. Out-of-scope defaults on class type parameters are validated as part of
+`invalid-generic-class`; the tests here cover the remaining cases for function and type alias
+scopes.
 
 ### Nested functions
 
@@ -406,16 +393,6 @@ def outer[T]() -> None:
     # error: [invalid-type-variable-default]
     def inner[U = T]() -> None: ...
     def ok[U = int]() -> None: ...  # OK
-```
-
-### Class nested in function
-
-<!-- snapshot-diagnostics -->
-
-```py
-def f[T]() -> None:
-    # error: [invalid-type-variable-default]
-    class C[U = T]: ...
 ```
 
 ### Function nested in class
@@ -439,21 +416,6 @@ class C[T]:
     type Alias[U = T] = list[U]
 
     type Ok[U = int] = list[U]  # OK
-```
-
-### Deeply nested
-
-<!-- snapshot-diagnostics -->
-
-```py
-class A[T]:
-    class B[U]:
-        # error: [invalid-type-variable-default]
-        class C[V = T]: ...
-
-        # error: [invalid-type-variable-default]
-        class D[V = U]: ...
-        class E[V = int]: ...  # OK
 ```
 
 ## Mixed-scope type parameters

@@ -4956,6 +4956,9 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
     ///
     /// Returns `true` if such a reference was found (and a diagnostic was emitted),
     /// indicating that further default validation should be skipped.
+    ///
+    /// Note: class type parameter scopes are skipped here because out-of-scope references
+    /// are already validated at the class level via `report_invalid_typevar_default_reference`.
     fn check_default_for_outer_scope_typevars(
         &self,
         default_ty: Type<'db>,
@@ -4965,12 +4968,9 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         let db = self.db();
 
         // Determine the expected binding context from the current type parameter scope.
-        // Type parameter defaults are evaluated in the type param scope of a class,
-        // function, or type alias. The expected binding context is that class/function/alias.
+        // Only check function and type alias scopes; class scopes are handled separately
+        // when processing the class definition.
         let expected_binding_def = match self.scope().node(db) {
-            NodeWithScopeKind::ClassTypeParameters(class) => {
-                self.index.expect_single_definition(class)
-            }
             NodeWithScopeKind::FunctionTypeParameters(function) => {
                 self.index.expect_single_definition(function)
             }
