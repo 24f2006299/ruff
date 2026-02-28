@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::cell::Cell;
 
 use itertools::{Either, EitherOrBoth, Itertools};
 use ruff_db::diagnostic::{
@@ -4981,18 +4980,16 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         };
         let expected_binding = BindingContext::Definition(expected_binding_def);
 
-        let outer_tv: Cell<Option<BoundTypeVarInstance<'db>>> = Cell::new(None);
-        any_over_type(db, default_ty, false, |ty| {
+        let outer_tv = find_over_type(db, default_ty, false, |ty| {
             if let Type::TypeVar(bound_tv) = ty {
                 if bound_tv.binding_context(db) != expected_binding {
-                    outer_tv.set(Some(bound_tv));
-                    return true;
+                    return Some(bound_tv);
                 }
             }
-            false
+            None
         });
 
-        if let Some(outer_tv) = outer_tv.get() {
+        if let Some(outer_tv) = outer_tv {
             let outer_typevar = outer_tv.typevar(db);
             let outer_name = outer_typevar.name(db);
             if let Some(builder) = self
