@@ -380,8 +380,8 @@ python-version = "3.13"
 
 Per the [typing spec][scoping rules], the default of a type parameter must not reference type
 parameters from an outer scope. Out-of-scope defaults on class type parameters are validated as part
-of `invalid-generic-class`; the tests here cover the remaining cases for function and type alias
-scopes.
+of `invalid-generic-class`; the tests here cover the remaining cases for PEP 695 function and type
+alias scopes, as well as legacy `TypeVar`s used in function/method signatures.
 
 ### Nested functions
 
@@ -415,6 +415,39 @@ class C[T]:
     type Alias[U = T] = list[U]
 
     type Ok[U = int] = list[U]  # OK
+```
+
+### Legacy TypeVar in method with outer-scope class TypeVar
+
+<!-- snapshot-diagnostics -->
+
+```py
+from typing import TypeVar, Generic
+
+T1 = TypeVar("T1")
+T2 = TypeVar("T2", default=T1)
+
+class Foo(Generic[T1]):
+    # error: [invalid-type-variable-default]
+    def method(self, x: T2) -> T2:
+        return x
+```
+
+### Legacy TypeVar in nested function
+
+<!-- snapshot-diagnostics -->
+
+```py
+from typing import TypeVar, Generic
+
+T = TypeVar("T")
+U = TypeVar("U", default=T)
+
+def outer(x: T) -> T:
+    # error: [invalid-type-variable-default]
+    def inner(y: U) -> U:
+        return y
+    return x
 ```
 
 ## Mixed-scope type parameters

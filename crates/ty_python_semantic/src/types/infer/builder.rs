@@ -674,6 +674,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             self.check_overloaded_functions(node);
             self.check_type_guard_definitions();
             self.check_legacy_positional_only_convention();
+            self.check_legacy_typevar_defaults();
             self.check_final_without_value();
         }
     }
@@ -742,6 +743,117 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                     }
                 } else if previous_non_positional_only.is_none() {
                     previous_non_positional_only = Some(param_node);
+                }
+            }
+        }
+    }
+
+    /// Iterate over all function definitions in this scope and check whether any legacy
+    /// `TypeVar` used in a function signature has a default that references an out-of-scope
+    /// type variable.
+    ///
+    /// This check mirrors the class-level check at `report_invalid_typevar_default_reference`,
+    /// but for function/method generic contexts. It must run after deferred inference is
+    /// complete so that the function's signature (and therefore its generic context) is available.
+    fn check_legacy_typevar_defaults(&mut self) {
+        let db = self.db();
+
+        for (definition, _) in &self.declarations {
+            if !definition.kind(db).is_function_def() {
+                continue;
+            }
+
+            let Some(Type::FunctionLiteral(function_type)) =
+                infer_definition_types(db, *definition).undecorated_type()
+            else {
+                continue;
+            };
+
+            let last_definition = function_type.literal(db).last_definition(db);
+            let signature = last_definition.raw_signature(db);
+
+            let Some(generic_context) = signature.generic_context else {
+                continue;
+            };
+
+            let typevars = generic_context.variables(db).map(|btv| btv.typevar(db));
+
+            for (i, typevar) in typevars.clone().enumerate() {
+                // Only check legacy TypeVars; PEP 695 type parameters are already validated
+                // by `check_default_for_outer_scope_typevars` in the type parameter scope.
+                if !matches!(
+                    typevar.kind(db),
+                    TypeVarKind::Legacy | TypeVarKind::Pep613Alias | TypeVarKind::ParamSpec
+                ) {
+                    continue;
+                }
+
+                let Some(default_ty) = typevar.default_type(db) else {
+                    continue;
+                };
+
+                let first_bad_tvar = find_over_type(db, default_ty, false, |t| {
+                    let tvar = match t {
+                        Type::TypeVar(tvar) => tvar.typevar(db),
+                        Type::KnownInstance(KnownInstanceType::TypeVar(tvar)) => tvar,
+                        _ => return None,
+                    };
+                    if !typevars.clone().take(i).contains(&tvar) {
+                        Some(tvar)
+                    } else {
+                        None
+                    }
+                });
+
+                let Some(bad_typevar) = first_bad_tvar else {
+                    continue;
+                };
+
+                let is_later_in_list = typevars.clone().skip(i).contains(&bad_typevar);
+                let node = last_definition.node(db, self.file(), self.module());
+
+                if let Some(builder) = self
+                    .context
+                    .report_lint(&INVALID_TYPE_VARIABLE_DEFAULT, node.name.range())
+                {
+                    let mut diagnostic = if is_later_in_list {
+                        builder.into_diagnostic(format_args!(
+                            "Default of `{}` cannot reference later type parameter `{}`",
+                            typevar.name(db),
+                            bad_typevar.name(db),
+                        ))
+                    } else {
+                        builder.into_diagnostic(format_args!(
+                            "Default of `{}` cannot reference out-of-scope type variable `{}`",
+                            typevar.name(db),
+                            bad_typevar.name(db),
+                        ))
+                    };
+
+                    let typevars_to_annotate = if is_later_in_list {
+                        &[typevar, bad_typevar][..]
+                    } else {
+                        &[typevar][..]
+                    };
+
+                    for tvar in typevars_to_annotate {
+                        if let Some(tvar_definition) = tvar.definition(db) {
+                            let file = tvar_definition.file(db);
+                            diagnostic.annotate(
+                                Annotation::secondary(Span::from(
+                                    tvar_definition
+                                        .full_range(db, &parsed_module(db, file).load(db)),
+                                ))
+                                .message(format_args!("`{}` defined here", tvar.name(db))),
+                            );
+                        }
+                    }
+
+                    if !is_later_in_list {
+                        diagnostic.info(
+                            "See https://typing.python.org/en/latest/spec/generics.html#scoping-rules",
+                        );
+                    }
                 }
             }
         }
@@ -4951,13 +5063,15 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         }
     }
 
-    /// Check if a type parameter's default references type variables from an outer scope.
+    /// Check if a PEP 695 type parameter's default references type variables from an outer scope.
     ///
     /// Returns `true` if such a reference was found (and a diagnostic was emitted),
     /// indicating that further default validation should be skipped.
     ///
-    /// Note: class type parameter scopes are skipped here because out-of-scope references
-    /// are already validated at the class level via `report_invalid_typevar_default_reference`.
+    /// Note: this only handles PEP 695 type parameters in function and type alias scopes.
+    /// Class type parameter scopes are skipped here because out-of-scope references
+    /// are validated at the class level via `report_invalid_typevar_default_reference`.
+    /// Legacy `TypeVar`s are validated by `check_legacy_typevar_defaults`.
     fn check_default_for_outer_scope_typevars(
         &self,
         default_ty: Type<'db>,
@@ -7677,9 +7791,10 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                 // Pass `None` for the name: the outer-scope typevar check inside
                 // `infer_paramspec_default` is only relevant for PEP 695 type parameter
                 // scopes. Legacy ParamSpec definitions live at module/class-body scope,
-                // so the check would be a no-op; for classes, out-of-scope defaults are
-                // instead validated at the class definition via
-                // `report_invalid_typevar_default_reference`.
+                // so the check would be a no-op here. Out-of-scope defaults for legacy
+                // typevars are instead validated by `check_legacy_typevar_defaults`
+                // (for functions) and `report_invalid_typevar_default_reference`
+                // (for classes).
                 self.infer_paramspec_default(&default.value, None);
             } else {
                 let default_ty = self.infer_type_expression(&default.value);
