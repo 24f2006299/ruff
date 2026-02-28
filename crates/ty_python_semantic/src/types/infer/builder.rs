@@ -812,44 +812,58 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                 let is_later_in_list = typevars.clone().skip(i).contains(&bad_typevar);
                 let node = last_definition.node(db, self.file(), self.module());
 
+                // Find the range of the first use of this TypeVar in the function
+                // signature (parameter annotations or return type).
+                let typevar_name = typevar.name(db);
+                let primary_range = node
+                    .parameters
+                    .iter_non_variadic_params()
+                    .filter_map(|p| p.parameter.annotation.as_deref())
+                    .chain(node.returns.as_deref())
+                    .find_map(|ann| find_name_range(ann, typevar_name))
+                    .unwrap_or(node.name.range());
+
                 if let Some(builder) = self
                     .context
-                    .report_lint(&INVALID_TYPE_VARIABLE_DEFAULT, node.name.range())
+                    .report_lint(&INVALID_TYPE_VARIABLE_DEFAULT, primary_range)
                 {
                     let mut diagnostic = if is_later_in_list {
                         builder.into_diagnostic(format_args!(
                             "Default of `{}` cannot reference later type parameter `{}`",
-                            typevar.name(db),
+                            typevar_name,
                             bad_typevar.name(db),
                         ))
                     } else {
                         builder.into_diagnostic(format_args!(
                             "Default of `{}` cannot reference out-of-scope type variable `{}`",
-                            typevar.name(db),
+                            typevar_name,
                             bad_typevar.name(db),
                         ))
                     };
 
-                    let typevars_to_annotate = if is_later_in_list {
-                        &[typevar, bad_typevar][..]
-                    } else {
-                        &[typevar][..]
-                    };
-
-                    for tvar in typevars_to_annotate {
-                        if let Some(tvar_definition) = tvar.definition(db) {
-                            let file = tvar_definition.file(db);
-                            diagnostic.annotate(
-                                Annotation::secondary(Span::from(
-                                    tvar_definition
-                                        .full_range(db, &parsed_module(db, file).load(db)),
-                                ))
-                                .message(format_args!("`{}` defined here", tvar.name(db))),
-                            );
-                        }
+                    if let Some(typevar_definition) = typevar.definition(db) {
+                        let file = typevar_definition.file(db);
+                        diagnostic.annotate(
+                            Annotation::secondary(Span::from(
+                                typevar_definition
+                                    .full_range(db, &parsed_module(db, file).load(db)),
+                            ))
+                            .message(format_args!("`{typevar_name}` defined here")),
+                        );
                     }
 
-                    if !is_later_in_list {
+                    if is_later_in_list {
+                        if let Some(bad_definition) = bad_typevar.definition(db) {
+                            let file = bad_definition.file(db);
+                            diagnostic.annotate(
+                                Annotation::secondary(Span::from(
+                                    bad_definition
+                                        .full_range(db, &parsed_module(db, file).load(db)),
+                                ))
+                                .message(format_args!("`{}` defined here", bad_typevar.name(db))),
+                            );
+                        }
+                    } else {
                         diagnostic.info(
                             "See https://typing.python.org/en/latest/spec/generics.html#scoping-rules",
                         );
@@ -17883,6 +17897,33 @@ fn contains_string_literal(expr: &ast::Expr) -> bool {
     let mut visitor = ContainsStringLiteral(false);
     visitor.visit_expr(expr);
     visitor.0
+}
+
+/// Find the range of the first `Name` node in `expr` whose identifier matches `name`.
+fn find_name_range(expr: &ast::Expr, name: &Name) -> Option<TextRange> {
+    struct FindName<'a> {
+        name: &'a Name,
+        range: Option<TextRange>,
+    }
+
+    impl<'a> Visitor<'a> for FindName<'_> {
+        fn visit_expr(&mut self, expr: &'a ast::Expr) {
+            if self.range.is_some() {
+                return;
+            }
+            if let ast::Expr::Name(name_node) = expr {
+                if &name_node.id == self.name {
+                    self.range = Some(name_node.range);
+                    return;
+                }
+            }
+            walk_expr(self, expr);
+        }
+    }
+
+    let mut visitor = FindName { name, range: None };
+    visitor.visit_expr(expr);
+    visitor.range
 }
 
 /// Map based on a `Vec`. It doesn't enforce

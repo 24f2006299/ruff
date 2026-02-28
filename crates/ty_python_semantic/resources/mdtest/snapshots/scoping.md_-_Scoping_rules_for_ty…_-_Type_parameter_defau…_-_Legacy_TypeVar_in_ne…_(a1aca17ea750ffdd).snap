@@ -39,7 +39,7 @@ error[invalid-type-variable-default]: Default of `U` cannot reference out-of-sco
  6 | def outer(x: T) -> T:
  7 |     # error: [invalid-type-variable-default]
  8 |     def inner(y: U) -> U:
-   |         ^^^^^
+   |                  ^
  9 |         return y
 10 |     return x
    |
