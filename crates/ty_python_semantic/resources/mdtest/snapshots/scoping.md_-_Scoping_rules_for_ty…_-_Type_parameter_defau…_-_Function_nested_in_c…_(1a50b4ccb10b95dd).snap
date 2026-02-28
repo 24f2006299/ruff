@@ -16,8 +16,8 @@ mdtest path: crates/ty_python_semantic/resources/mdtest/generics/scoping.md
 ```
 1 | class C[T]:
 2 |     # error: [invalid-type-variable-default]
-3 |     def f[U = T](self) -> None: ...
-4 |     def g[U = int](self) -> None: ...  # OK
+3 |     def f[U = T](self): ...
+4 |     def g[U = int](self): ...  # OK
 ```
 
 # Diagnostics
@@ -28,9 +28,9 @@ error[invalid-type-variable-default]: Type parameter `U` cannot use type paramet
   |
 1 | class C[T]:
 2 |     # error: [invalid-type-variable-default]
-3 |     def f[U = T](self) -> None: ...
+3 |     def f[U = T](self): ...
   |               ^
-4 |     def g[U = int](self) -> None: ...  # OK
+4 |     def g[U = int](self): ...  # OK
   |
 info: rule `invalid-type-variable-default` is enabled by default
 

@@ -388,10 +388,10 @@ scopes.
 <!-- snapshot-diagnostics -->
 
 ```py
-def outer[T]() -> None:
+def outer[T]():
     # error: [invalid-type-variable-default]
-    def inner[U = T]() -> None: ...
-    def ok[U = int]() -> None: ...  # OK
+    def inner[U = T](): ...
+    def ok[U = int](): ...  # OK
 ```
 
 ### Function nested in class
@@ -401,8 +401,8 @@ def outer[T]() -> None:
 ```py
 class C[T]:
     # error: [invalid-type-variable-default]
-    def f[U = T](self) -> None: ...
-    def g[U = int](self) -> None: ...  # OK
+    def f[U = T](self): ...
+    def g[U = int](self): ...  # OK
 ```
 
 ### Type alias nested in class

@@ -14,10 +14,10 @@ mdtest path: crates/ty_python_semantic/resources/mdtest/generics/scoping.md
 ## mdtest_snippet.py
 
 ```
-1 | def outer[T]() -> None:
+1 | def outer[T]():
 2 |     # error: [invalid-type-variable-default]
-3 |     def inner[U = T]() -> None: ...
-4 |     def ok[U = int]() -> None: ...  # OK
+3 |     def inner[U = T](): ...
+4 |     def ok[U = int](): ...  # OK
 ```
 
 # Diagnostics
@@ -26,11 +26,11 @@ mdtest path: crates/ty_python_semantic/resources/mdtest/generics/scoping.md
 error[invalid-type-variable-default]: Type parameter `U` cannot use type parameter `T` from an outer scope as its default
  --> src/mdtest_snippet.py:3:19
   |
-1 | def outer[T]() -> None:
+1 | def outer[T]():
 2 |     # error: [invalid-type-variable-default]
-3 |     def inner[U = T]() -> None: ...
+3 |     def inner[U = T](): ...
   |                   ^
-4 |     def ok[U = int]() -> None: ...  # OK
+4 |     def ok[U = int](): ...  # OK
   |
 info: rule `invalid-type-variable-default` is enabled by default
 
