@@ -24,13 +24,14 @@ mdtest path: crates/ty_python_semantic/resources/mdtest/generics/scoping.md
 # Diagnostics
 
 ```
-error[invalid-type-variable-default]: Type parameter `U` cannot use type parameter `T` from an outer scope as its default
- --> src/mdtest_snippet.py:3:20
+error[invalid-type-variable-default]: Invalid default for type parameter `U`
+ --> src/mdtest_snippet.py:1:9
   |
 1 | class C[T]:
+  |         - `T` defined here
 2 |     # error: [invalid-type-variable-default]
 3 |     type Alias[U = T] = list[U]
-  |                    ^
+  |                    ^ `T` is a type parameter bound in an outer scope
 4 |
 5 |     type Ok[U = int] = list[U]  # OK
   |

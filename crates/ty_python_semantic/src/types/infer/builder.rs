@@ -4993,15 +4993,31 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         });
 
         if let Some(outer_tv) = outer_tv.get() {
-            let outer_name = outer_tv.typevar(db).name(db);
+            let outer_typevar = outer_tv.typevar(db);
+            let outer_name = outer_typevar.name(db);
             if let Some(builder) = self
                 .context
                 .report_lint(&INVALID_TYPE_VARIABLE_DEFAULT, default_node)
             {
-                builder.into_diagnostic(format_args!(
-                    "Type parameter `{typevar_name}` cannot use type parameter \
-                    `{outer_name}` from an outer scope as its default"
+                let mut diagnostic = builder.into_diagnostic(format_args!(
+                    "Invalid default for type parameter `{typevar_name}`"
                 ));
+                diagnostic.set_primary_message(format_args!(
+                    "`{outer_name}` is a type parameter bound in an outer scope"
+                ));
+                diagnostic.set_concise_message(format_args!(
+                    "Type parameter `{typevar_name}` cannot use \
+                    outer-scope type parameter `{outer_name}` as its default"
+                ));
+                if let Some(definition) = outer_typevar.definition(db) {
+                    let file = definition.file(db);
+                    diagnostic.annotate(
+                        Annotation::secondary(Span::from(
+                            definition.full_range(db, &parsed_module(db, file).load(db)),
+                        ))
+                        .message(format_args!("`{outer_name}` defined here")),
+                    );
+                }
             }
             return true;
         }
