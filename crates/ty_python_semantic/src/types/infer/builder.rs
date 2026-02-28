@@ -5095,10 +5095,10 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             }
             ast::Expr::Name(_) => {
                 let ty = self.infer_type_expression(default_expr);
-                if let Some(name) = paramspec_name {
-                    if self.check_default_for_outer_scope_typevars(ty, default_expr, name) {
-                        return;
-                    }
+                if let Some(name) = paramspec_name
+                    && self.check_default_for_outer_scope_typevars(ty, default_expr, name)
+                {
+                    return;
                 }
                 let is_paramspec = match ty {
                     Type::TypeVar(typevar) => typevar.is_paramspec(self.db()),
