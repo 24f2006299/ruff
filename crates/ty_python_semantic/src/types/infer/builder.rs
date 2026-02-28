@@ -4981,10 +4981,10 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         let expected_binding = BindingContext::Definition(expected_binding_def);
 
         let outer_tv = find_over_type(db, default_ty, false, |ty| {
-            if let Type::TypeVar(bound_tv) = ty {
-                if bound_tv.binding_context(db) != expected_binding {
-                    return Some(bound_tv);
-                }
+            if let Type::TypeVar(bound_tv) = ty
+                && bound_tv.binding_context(db) != expected_binding
+            {
+                return Some(bound_tv);
             }
             None
         });
