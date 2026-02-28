@@ -3819,32 +3819,45 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             }
         });
 
+        let vararg_name = parameters
+            .vararg
+            .as_deref()
+            .map(|v| v.name.as_str());
+        let kwarg_name = parameters
+            .kwarg
+            .as_deref()
+            .map(|k| k.name.as_str());
+
         match (args_paramspec, kwargs_paramspec) {
             // Both *args: P.args and **kwargs: P.kwargs present
             (Some((args_tv, _args_annotation)), Some((kwargs_tv, kwargs_annotation))) => {
                 // Check they refer to the same ParamSpec
                 if !args_tv.is_same_typevar_as(db, kwargs_tv) {
                     let args_name = args_tv.name(db);
+                    let vararg = vararg_name.unwrap_or("args");
+                    let kwarg = kwarg_name.unwrap_or("kwargs");
                     if let Some(builder) = self
                         .context
                         .report_lint(&INVALID_PARAMSPEC, kwargs_annotation)
                     {
                         builder.into_diagnostic(format_args!(
-                            "`*args: {args_name}.args` must be accompanied \
-                             by `**kwargs: {args_name}.kwargs`",
+                            "`*{vararg}: {args_name}.args` must be accompanied \
+                             by `**{kwarg}: {args_name}.kwargs`",
                         ));
                     }
                 } else {
                     // Same ParamSpec - check no keyword-only params between them
                     if !parameters.kwonlyargs.is_empty() {
                         let name = args_tv.name(db);
+                        let vararg = vararg_name.unwrap_or("args");
+                        let kwarg = kwarg_name.unwrap_or("kwargs");
                         if let Some(builder) = self
                             .context
                             .report_lint(&INVALID_PARAMSPEC, &parameters.kwonlyargs[0])
                         {
                             builder.into_diagnostic(format_args!(
                                 "No parameters may appear between \
-                                 `*args: {name}.args` and `**kwargs: {name}.kwargs`",
+                                 `*{vararg}: {name}.args` and `**{kwarg}: {name}.kwargs`",
                             ));
                         }
                     }
@@ -3854,17 +3867,19 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             // *args: P.args without matching **kwargs: P.kwargs
             (Some((args_tv, args_annotation)), None) => {
                 let name = args_tv.name(db);
+                let vararg = vararg_name.unwrap_or("args");
+                let kwarg = kwarg_name.unwrap_or("kwargs");
                 // Report on the kwarg annotation if it exists, otherwise on *args
-                let range = if let Some(kwarg) = parameters.kwarg.as_deref() {
-                    kwarg
+                let range = if let Some(kwarg_param) = parameters.kwarg.as_deref() {
+                    kwarg_param
                         .annotation()
-                        .map_or(kwarg.range(), |a| a.range())
+                        .map_or(kwarg_param.range(), Ranged::range)
                 } else {
                     args_annotation.range()
                 };
                 if let Some(builder) = self.context.report_lint(&INVALID_PARAMSPEC, range) {
                     builder.into_diagnostic(format_args!(
-                        "`*args: {name}.args` must be accompanied by `**kwargs: {name}.kwargs`",
+                        "`*{vararg}: {name}.args` must be accompanied by `**{kwarg}: {name}.kwargs`",
                     ));
                 }
             }
@@ -3872,17 +3887,19 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             // **kwargs: P.kwargs without matching *args: P.args
             (None, Some((kwargs_tv, kwargs_annotation))) => {
                 let name = kwargs_tv.name(db);
+                let vararg = vararg_name.unwrap_or("args");
+                let kwarg = kwarg_name.unwrap_or("kwargs");
                 // Report on the vararg annotation if it exists, otherwise on **kwargs
-                let range = if let Some(vararg) = parameters.vararg.as_deref() {
-                    vararg
+                let range = if let Some(vararg_param) = parameters.vararg.as_deref() {
+                    vararg_param
                         .annotation()
-                        .map_or(vararg.range(), |a| a.range())
+                        .map_or(vararg_param.range(), Ranged::range)
                 } else {
                     kwargs_annotation.range()
                 };
                 if let Some(builder) = self.context.report_lint(&INVALID_PARAMSPEC, range) {
                     builder.into_diagnostic(format_args!(
-                        "`**kwargs: {name}.kwargs` must be accompanied by `*args: {name}.args`",
+                        "`**{kwarg}: {name}.kwargs` must be accompanied by `*{vararg}: {name}.args`",
                     ));
                 } else {
                     // No *args at all
@@ -3891,8 +3908,8 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                         .report_lint(&INVALID_PARAMSPEC, kwargs_annotation)
                     {
                         builder.into_diagnostic(format_args!(
-                            "`**kwargs: {name}.kwargs` must be accompanied by \
-                             `*args: {name}.args`",
+                            "`**{kwarg}: {name}.kwargs` must be accompanied by \
+                             `*{kwarg}: {name}.args`",
                         ));
                     }
                 }
