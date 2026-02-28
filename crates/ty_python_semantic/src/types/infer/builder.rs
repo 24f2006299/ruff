@@ -7657,10 +7657,13 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                 known_class,
                 Some(KnownClass::ParamSpec | KnownClass::ExtensionsParamSpec)
             ) {
-                self.infer_paramspec_default(
-                    &default.value,
-                    target.as_name_expr().map(|n| n.id.as_str()),
-                );
+                // Pass `None` for the name: the outer-scope typevar check inside
+                // `infer_paramspec_default` is only relevant for PEP 695 type parameter
+                // scopes. Legacy ParamSpec definitions live at module/class-body scope,
+                // so the check would be a no-op; for classes, out-of-scope defaults are
+                // instead validated at the class definition via
+                // `report_invalid_typevar_default_reference`.
+                self.infer_paramspec_default(&default.value, None);
             } else {
                 let default_ty = self.infer_type_expression(&default.value);
                 let bound_or_constraints_node = arguments
